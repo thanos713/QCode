@@ -5,13 +5,8 @@
 #include <gsl/gsl_blas.h>
 #include <gsl/gsl_linalg.h>
 
-#define norb 7
-#define nocc 4
-#define dim 14
-#define Nelec 10
+int norb, nocc, dim, Nelec;
 
-//dim = 2*norb
-//Nelec = 2*nocc+2
 void clever_printf(gsl_matrix *matrix, const char *text, int size)
 {
 	printf("\n%s\n", text);
@@ -78,7 +73,6 @@ gsl_matrix *diisfunc(gsl_matrix *e1, gsl_matrix *e2, gsl_matrix *e3, gsl_matrix 
 {
     double trace = 0;
     gsl_matrix *tmp = gsl_matrix_alloc(norb,norb);
-
     gsl_vector *x = gsl_vector_alloc(6);
 
     gsl_matrix *B = gsl_matrix_alloc(6,6); //6 giati sto DIIS mou xrisimopoio 5 errors
@@ -263,6 +257,7 @@ gsl_matrix *diisfunc(gsl_matrix *e1, gsl_matrix *e2, gsl_matrix *e3, gsl_matrix 
     gsl_matrix_add(FF1, FF4);
     gsl_matrix_add(FF1, FF5);
 
+		free(tmp); free(x); free(B);
     return FF1;
 
 }
@@ -318,6 +313,8 @@ void transformIntegrals(double ****eri, gsl_matrix *C)
                                                 athroisma += gsl_matrix_get(C,ii,j4)*temperi[j1+1][j2+1][j3+1][ii+1];
                                         }
                                         eri[j1+1][j2+1][j3+1][j4+1] = athroisma; } } } }
+
+			  free(temperi);
 }
 
 void findTraceDensity(gsl_matrix *Ssqrt, gsl_matrix *D)
@@ -339,11 +336,12 @@ void findTraceDensity(gsl_matrix *Ssqrt, gsl_matrix *D)
         gsl_blas_dgemm(CblasNoTrans, CblasNoTrans, 1.0, invSsqrt, D, 0.0, SD);
         gsl_blas_dgemm(CblasNoTrans, CblasNoTrans, 1.0, SD, invSsqrt, 0.0, SDS);//O logos pou to kano etsi einai epeidi exo to Ssqrt, oxi to S, kanonika einai trace(PS)
 
-        clever_printf(SDS, "Density matrix.", norb);
+      //  clever_printf(SDS, "Density matrix.", norb);
         double noccupied=0;
         for (int i=0;i<norb;i++)
                 noccupied += gsl_matrix_get(SDS,i,i); //find number of occupied orbitals from density matrix
         printf("trace = %lf\n", noccupied);
+				free(SDS); free(SD); free(invSsqrt); free(Ssqrt_for_inv);
 }
 
 
@@ -612,10 +610,17 @@ double doccsd(gsl_matrix *soFock, double ****soeri, int maxiter, double **ts, do
                         td[i][j][k][l] = tdnew[i][j][k][l];
 
         eccsd = ccsdCalc(soFock, soeri, ts, td);
-        printf("%2d\tE(CCSD)=%.12lf\n", iter, eccsd);
+				if (iter<10)
+						printf("0%d\t   %.12lf\n", iter,eccsd);
+				else
+						printf("%2d\t   %.12lf\n", iter,eccsd);
         ++iter;
    }
-   if (iter < maxiter && maxiter != 1)
+
+	 free(Fae); free(Fmi); free(Fme);  free(Dai);
+ 	 free(Wmnij); free(Wabef); free(Wmbej); free(Dabij);
+
+   if (iter <= maxiter+1 && maxiter != 1)
    {
     printf("CCSD converged.\n");
     return eccsd;
@@ -646,6 +651,39 @@ double doccsdt(gsl_matrix *soFock, double ****soeri, double **ts, double ****td)
                                 et += tttc*denom(i,j,k,a,b,c,soFock)*(tttc+tttd)/36;
                         }}}}}}
                 return et;
+}
+
+void readGeom()
+{
+	 FILE *geomfile = fopen("geom.dat", "r");
+	 int N;
+	 double **coord, *zval;
+
+	 fscanf(geomfile, "%d", &N);
+	 coord = (double**) malloc(N*sizeof(double*));
+	 zval = (double *)malloc(sizeof(double)*N);
+
+	for (int i = 0; i < N; i++)
+					coord[i] = (double*) malloc(3*sizeof(double));
+
+	double sum=0;
+	for (int i=0; i<N; i++)
+	{
+					fscanf(geomfile, "%lf %lf %lf %lf\n", &zval[i], &coord[i][0], &coord[i][1], &coord[i][2]);
+					sum += zval[i];
+  }
+
+  fscanf(geomfile, "%d", &norb);
+  Nelec = (int)sum;
+	nocc = Nelec/2 - 1;
+	dim = norb*2;
+
+	/*		#define norb 7
+			#define nocc 4
+			#define dim 14
+			#define Nelec 10*/
+
+	fclose(geomfile);
 }
 
 void readData(double ****eri, gsl_matrix *T, gsl_matrix *S, gsl_matrix *V, double *enuc)
@@ -686,7 +724,6 @@ void readData(double ****eri, gsl_matrix *T, gsl_matrix *S, gsl_matrix *V, doubl
 			fclose(Sfile);
 			fclose(Tfile);
 			fclose(Vfile);
-
 }
 
 
@@ -750,7 +787,7 @@ for (int i=0; i< Nelec*nocc; i++)
 		for (int i=0; i< (nocc+1)*(norb-nocc-1); i++)
 				printf("%d\t%.12lf\n", i, gsl_vector_get(eval, i));
 
-				//Beginning intensity
+		/*		//Beginning intensity
 								gsl_vector_view evec_0 = gsl_matrix_column (evec, 0);
 								double dotu;
 
@@ -759,7 +796,7 @@ for (int i=0; i< Nelec*nocc; i++)
 									gsl_vector_view evec_i = gsl_matrix_column (evec, i);
 									gsl_blas_ddot(&evec_0.vector, &evec_i.vector, &dotu);
 									printf("Relative intensity = %lf\n", dotu );
-							}
+							}*/
 
 				//CIS with spatial-orbitals (eri) for triplets only
 					gsl_matrix *Hcist = gsl_matrix_alloc( (nocc+1)*(norb-nocc-1), (nocc+1)*(norb-nocc-1) );
@@ -784,6 +821,8 @@ for (int i=0; i< Nelec*nocc; i++)
 				printf("Excitation energies for triplets only with CIS.\n#\tHartree\n");
 				for (int i=0; i< (nocc+1)*(norb-nocc-1); i++)
 						printf("%d\t%.12lf\n", i, gsl_vector_get(eval, i));
+
+			  free(Hciss); free(Hcist);
 
 }
 
@@ -825,6 +864,8 @@ int thesia = 0, thesib=0, thesi_a=0, thesi_b=0;
 printf("Excitation energies from RPA.\n#\tHartree\n");
 for (int i=0; i< 2*Nelec*nocc; i++)
 		printf("%d\t%.10lf\n", i, gsl_vector_complex_get(eval, i));
+
+  free(A); free(B); free(mRPA);
 }
 
 void RPA2(double ****soeri, gsl_matrix *soFock)
@@ -868,157 +909,125 @@ printf("Excitation energies from RPA.\n#\tHartree\n");
 for (int i=0; i< Nelec*nocc; i++) {
 		double value = GSL_REAL(gsl_vector_complex_get(eval, i)); printf("%d\t%.10lf\n", i, sqrt(value)); } //GSL_REAL is used to get the square root of the eigenvalue. Square root because of this RPA formalism
 
+		free(A); free(B); free(C); free(D); free(mRPA);
+
 }
 
-int main()
+double HF(gsl_matrix *S, gsl_matrix *T, gsl_matrix *V, double ****eri, gsl_matrix *Hcore, gsl_matrix *D, gsl_matrix *Fock, gsl_matrix *C, gsl_vector *epsilon, const gsl_matrix *Ssaved, int maxiter)
 {
-	double enuc;
-
-        double  ****eri;
-        allocate4(eri, norb+2);
-        gsl_matrix *T, *S, *V, *Hcore;
-        S = gsl_matrix_alloc(norb, norb); T = gsl_matrix_alloc(norb, norb); V = gsl_matrix_alloc(norb, norb); Hcore = gsl_matrix_alloc(norb, norb);
-        gsl_matrix_set_zero(Hcore); gsl_matrix_set_zero(S); gsl_matrix_set_zero(V); gsl_matrix_set_zero(T);
-
-
-	readData(eri, T, S, V, &enuc);
-
-	//printf("Nuclear repulsion energy = \t%lf\n", enuc);
-
-        gsl_matrix *Ssaved = gsl_matrix_alloc(norb, norb);
-        for (int i=0; i<norb; i++)
-                for (int j=0;j<norb;j++)  //Ta diatiro ta S gia na ta xreiasto meta se DIIS
-                        gsl_matrix_set(Ssaved, i, j, gsl_matrix_get(S,i,j));
-
-	//clever_printf(T, "Kinetic-Energy Integrals:");
-	//clever_printf(V, "Nuclear Attraction Integrals:");
-
-        gsl_matrix_set_zero(Hcore);
-
-        gsl_matrix_add(Hcore, T);
-        gsl_matrix_add(Hcore, V);
-
-	//clever_printf(Hcore, "Core Hamiltonian:");
-
-	gsl_vector *eval = gsl_vector_alloc (norb);
-	gsl_matrix *evec = gsl_matrix_alloc (norb, norb);
+	gsl_vector *eval = gsl_vector_alloc (norb); 	gsl_matrix *evec = gsl_matrix_alloc (norb, norb);
 
 	gsl_eigen_symmv_workspace * w = gsl_eigen_symmv_alloc (norb);
-  	gsl_eigen_symmv (S, eval, evec, w);
+	gsl_eigen_symmv (S, eval, evec, w);
 	gsl_eigen_symmv_sort (eval, evec, GSL_EIGEN_SORT_ABS_ASC);
 
-        gsl_matrix *Lambda, *L;
+	gsl_matrix *Lambda, *L;
 
-        Lambda = gsl_matrix_alloc(norb, norb); L = gsl_matrix_alloc(norb, norb);
-        gsl_matrix_set_zero(Lambda); gsl_matrix_set_zero(L);
+	Lambda = gsl_matrix_alloc(norb, norb); L = gsl_matrix_alloc(norb, norb);
+	gsl_matrix_set_zero(Lambda); gsl_matrix_set_zero(L);
 
-    	for (int i = 0; i < norb; i++)
-      	{
-		gsl_matrix_set(Lambda, i, i, gsl_vector_get (eval, i));
-		for (int j=0; j<norb; j++)
-		{
-			gsl_matrix_set(L, i, j, gsl_matrix_get(evec,i,j));
-		}
-	}
+	for (int i = 0; i < norb; i++)
+	{
+			gsl_matrix_set(Lambda, i, i, gsl_vector_get (eval, i));
+			for (int j=0; j<norb; j++)
+			{
+					gsl_matrix_set(L, i, j, gsl_matrix_get(evec,i,j));
+		  }
+ }
 
+	gsl_matrix *Lambdasqrt = gsl_matrix_alloc(norb, norb);
 
-	gsl_matrix *Lambdasqrt;
-        Lambdasqrt = gsl_matrix_alloc(norb, norb);
 
 	for (int i=0; i<norb; i++)
-                gsl_matrix_set(Lambdasqrt, i, i, 1/sqrt(gsl_matrix_get(Lambda, i, i)));
+								gsl_matrix_set(Lambdasqrt, i, i, 1/sqrt(gsl_matrix_get(Lambda, i, i)));
 
-        gsl_matrix *Ssqrt, *tmp;
+	gsl_matrix *Ssqrt, *tmp;
 
-        Ssqrt = gsl_matrix_alloc(norb, norb);
-        tmp = gsl_matrix_alloc(norb, norb);
-        gsl_matrix_set_zero(Ssqrt);
-        gsl_matrix_set_zero(tmp);
+	Ssqrt = gsl_matrix_alloc(norb, norb);
+	tmp = gsl_matrix_alloc(norb, norb);
+	gsl_matrix_set_zero(Ssqrt);
+	gsl_matrix_set_zero(tmp);
 
-        gsl_blas_dgemm(CblasNoTrans, CblasTrans, 1.0, Lambdasqrt, L, 0.0, tmp);
-        gsl_blas_dgemm(CblasNoTrans, CblasNoTrans, 1.0, L, tmp, 0.0, Ssqrt);
+	gsl_blas_dgemm(CblasNoTrans, CblasTrans, 1.0, Lambdasqrt, L, 0.0, tmp);
+	gsl_blas_dgemm(CblasNoTrans, CblasNoTrans, 1.0, L, tmp, 0.0, Ssqrt);
 
 	//clever_printf(Ssqrt, "S^-1/2 Matrix:");
 
-        gsl_matrix *F;
-        F = gsl_matrix_alloc(norb, norb);
-        gsl_matrix_set_zero(F);
+	gsl_matrix *F;
+	F = gsl_matrix_alloc(norb, norb);
+	gsl_matrix_set_zero(F);
 
-        gsl_blas_dgemm(CblasNoTrans, CblasNoTrans, 1.0, Hcore, Ssqrt, 0.0, tmp);
-        gsl_blas_dgemm(CblasTrans, CblasNoTrans, 1.0, Ssqrt, tmp, 0.0, F);
+	gsl_blas_dgemm(CblasNoTrans, CblasNoTrans, 1.0, Hcore, Ssqrt, 0.0, tmp);
+	gsl_blas_dgemm(CblasTrans, CblasNoTrans, 1.0, Ssqrt, tmp, 0.0, F);
 
 	//clever_printf(F, "Initial F' matrix:");
 
-  	gsl_eigen_symmv (F, eval, evec, w);
+	gsl_eigen_symmv (F, eval, evec, w);
 	gsl_eigen_symmv_sort (eval, evec, GSL_EIGEN_SORT_VAL_ASC);
 
-        gsl_matrix *Cprime = gsl_matrix_alloc(norb, norb);
-        gsl_vector *epsilon = gsl_vector_alloc(norb);
-        gsl_matrix_set_zero(Cprime);
-        gsl_vector_set_zero(epsilon);
+	gsl_matrix *Cprime = gsl_matrix_alloc(norb, norb);
+	gsl_matrix_set_zero(Cprime);
+	gsl_vector_set_zero(epsilon);
 
-    	for (int i = 0; i < norb; i++)
-      	{
-		gsl_vector_set(epsilon, i, gsl_vector_get (eval, i));
-		for (int j=0; j<norb; j++)
-		{
-			gsl_matrix_set(Cprime, i, j, gsl_matrix_get(evec,i,j));
-		}
-	}
-
-	gsl_matrix *C = gsl_matrix_alloc(norb, norb);
-        gsl_matrix_set_zero(C);
-
-        gsl_blas_dgemm(CblasNoTrans, CblasNoTrans, 1.0, Ssqrt, Cprime, 0.0, C);
-
-	//clever_printf(C, "Initial C matrix:");
-
-	gsl_matrix *D = gsl_matrix_alloc(norb,norb);
-        double athroisma;
-
-	for (int i=0; i<norb; i++)
+	for (int i = 0; i < norb; i++)
 	{
-		for (int j=0; j<norb ;j++)
-		{
-			athroisma = 0;
-			for (int k=0; k<=nocc; k++)
+			gsl_vector_set(epsilon, i, gsl_vector_get (eval, i));
+			for (int j=0; j<norb; j++)
 			{
-				athroisma += gsl_matrix_get(C,i,k)*gsl_matrix_get(C,j,k);
+				gsl_matrix_set(Cprime, i, j, gsl_matrix_get(evec,i,j));
 			}
-			gsl_matrix_set(D,i,j, athroisma);
-		}
 	}
 
-	//clever_printf(D, "Initial Density matrix");
-        printf("Starting HF. \n");
-        printf("\nIter        E(elec)              E(tot)\n");
-	gsl_matrix *Fock = gsl_matrix_alloc(norb, norb);
-        double Eelec = 0.0;
+	gsl_blas_dgemm(CblasNoTrans, CblasNoTrans, 1.0, Ssqrt, Cprime, 0.0, C);
+
+	//clever_printf(C, "Initial C matrix:", norb);
+
+
+	double athroisma;
 
 	for (int i=0; i<norb; i++)
 	{
-		for (int j=0; j<norb; j++)
-		{
-			Eelec += gsl_matrix_get(D,i,j)*(gsl_matrix_get(Hcore,i,j) + gsl_matrix_get(F,i,j));
-		}
+				for (int j=0; j<norb ;j++)
+				{
+						athroisma = 0;
+						for (int k=0; k<=nocc; k++)
+						{
+								athroisma += gsl_matrix_get(C,i,k)*gsl_matrix_get(C,j,k);
+						}
+						gsl_matrix_set(D,i,j, athroisma);
+				}
 	}
 
-	//printf("\n00\t   %.12lf  \t%.12lf\n", Eelec, Eelec+enuc);
+//	clever_printf(D, "Initial Density matrix", norb);
+				printf("Starting HF. \n");
+				printf("\nIter        E(elec)              E(tot)\n");
+
+	double Eelec = 0.0;
+
+	for (int i=0; i<norb; i++)
+	{
+			for (int j=0; j<norb; j++)
+			{
+					Eelec += gsl_matrix_get(D,i,j)*(gsl_matrix_get(Hcore,i,j) + gsl_matrix_get(F,i,j));
+			}
+	}
+
+printf("\n00\t   %.12lf\n", Eelec);
 
 	for (int i=0;i<norb;i++)
 	{
 		for (int j=0;j<norb;j++)
 		{
-			gsl_matrix_set(Fock,i,j,gsl_matrix_get(Hcore,i,j));
-			for (int k=0; k<norb; k++)
-			{
-                                athroisma = 0;
-				for (int l=0; l<norb;l++)
+				gsl_matrix_set(Fock,i,j,gsl_matrix_get(Hcore,i,j));
+				for (int k=0; k<norb; k++)
 				{
-                                        athroisma += (2*eri[i+1][j+1][k+1][l+1] - eri[i+1][k+1][j+1][l+1])*gsl_matrix_get(D,k,l);
+							athroisma = 0;
+							for (int l=0; l<norb;l++)
+							{
+														athroisma += (2*eri[i+1][j+1][k+1][l+1] - eri[i+1][k+1][j+1][l+1])*gsl_matrix_get(D,k,l);
+							}
+						  gsl_matrix_set(Fock,i,j, athroisma+gsl_matrix_get(Fock,i,j));
 				}
-                                gsl_matrix_set(Fock,i,j, athroisma+gsl_matrix_get(Fock,i,j));
-			}
 		}
 	}
 
@@ -1033,204 +1042,243 @@ int main()
 		}
 	}
 
-	printf(" 1\t   %.12lf  \t%.12lf\n", Eelec, Eelec+enuc);
+	printf("01\t   %.12lf  \n", Eelec);
 
-        gsl_matrix *FDS = gsl_matrix_alloc(norb,norb);
-        gsl_matrix *SDF = gsl_matrix_alloc(norb,norb);
-        gsl_matrix *e1 = gsl_matrix_alloc(norb,norb);
-        gsl_matrix *e2 = gsl_matrix_alloc(norb,norb);
-        gsl_matrix *e3 = gsl_matrix_alloc(norb,norb);
-        gsl_matrix *e4 = gsl_matrix_alloc(norb,norb);
-        gsl_matrix *e5 = gsl_matrix_alloc(norb,norb);
-        gsl_matrix *F1 = gsl_matrix_alloc(norb,norb);
-        gsl_matrix *F2 = gsl_matrix_alloc(norb,norb);
-        gsl_matrix *F3 = gsl_matrix_alloc(norb,norb);
-        gsl_matrix *F4 = gsl_matrix_alloc(norb,norb);
-        gsl_matrix *F5 = gsl_matrix_alloc(norb,norb);
+				gsl_matrix *FDS = gsl_matrix_alloc(norb,norb);
+				gsl_matrix *SDF = gsl_matrix_alloc(norb,norb);
+				gsl_matrix *e1 = gsl_matrix_alloc(norb,norb);
+				gsl_matrix *e2 = gsl_matrix_alloc(norb,norb);
+				gsl_matrix *e3 = gsl_matrix_alloc(norb,norb);
+				gsl_matrix *e4 = gsl_matrix_alloc(norb,norb);
+				gsl_matrix *e5 = gsl_matrix_alloc(norb,norb);
+				gsl_matrix *F1 = gsl_matrix_alloc(norb,norb);
+				gsl_matrix *F2 = gsl_matrix_alloc(norb,norb);
+				gsl_matrix *F3 = gsl_matrix_alloc(norb,norb);
+				gsl_matrix *F4 = gsl_matrix_alloc(norb,norb);
+				gsl_matrix *F5 = gsl_matrix_alloc(norb,norb);
 
+				int iter=2;
+				double res = 1.0;
+				int diis = 1;
+				gsl_matrix_set_zero(e1);
+				gsl_matrix_set_zero(e2);
+				gsl_matrix_set_zero(e3);
+				gsl_matrix_set_zero(e4);
+				gsl_matrix_set_zero(e5);
 
-        int iter=2;
-        double res = 1.0;
-        int diis = 1;
-        gsl_matrix_set_zero(e1);
-        gsl_matrix_set_zero(e2);
-        gsl_matrix_set_zero(e3);
-        gsl_matrix_set_zero(e4);
-        gsl_matrix_set_zero(e5);
+				while (res >= 1e-12 && iter <= maxiter)
+				{
 
-        while (res >= 1e-12)
-        {
+								gsl_blas_dgemm(CblasNoTrans, CblasNoTrans, 1.0, Fock, Ssqrt, 0.0, tmp);
+								gsl_blas_dgemm(CblasTrans, CblasNoTrans, 1.0, Ssqrt, tmp, 0.0, F);
 
-                gsl_blas_dgemm(CblasNoTrans, CblasNoTrans, 1.0, Fock, Ssqrt, 0.0, tmp);
-                gsl_blas_dgemm(CblasTrans, CblasNoTrans, 1.0, Ssqrt, tmp, 0.0, F);
+					w = gsl_eigen_symmv_alloc (norb);
+						gsl_eigen_symmv (F, eval, evec, w);
+					gsl_eigen_symmv_sort (eval, evec, GSL_EIGEN_SORT_VAL_ASC);
 
-	        w = gsl_eigen_symmv_alloc (norb);
-          	gsl_eigen_symmv (F, eval, evec, w);
-	        gsl_eigen_symmv_sort (eval, evec, GSL_EIGEN_SORT_VAL_ASC);
+							for (int i = 0; i < norb; i++)
+								{
+						gsl_vector_set(epsilon, i, gsl_vector_get (eval, i));
+						for (int j=0; j<norb; j++)
+						{
+							gsl_matrix_set(Cprime, i, j, gsl_matrix_get(evec,i,j));
+						}
+					}
 
-            	for (int i = 0; i < norb; i++)
-              	{
-		        gsl_vector_set(epsilon, i, gsl_vector_get (eval, i));
-		        for (int j=0; j<norb; j++)
-		        {
-			        gsl_matrix_set(Cprime, i, j, gsl_matrix_get(evec,i,j));
-		        }
-	        }
+								gsl_blas_dgemm(CblasNoTrans, CblasNoTrans, 1.0, Ssqrt, Cprime, 0.0, C);
 
-                gsl_blas_dgemm(CblasNoTrans, CblasNoTrans, 1.0, Ssqrt, Cprime, 0.0, C);
+								gsl_matrix *D_old = gsl_matrix_alloc(norb,norb);
+								for (int i=0; i<norb; i++)
+										for (int j=0; j<norb; j++)
+												gsl_matrix_set(D_old, i, j, gsl_matrix_get(D, i, j));
 
-                gsl_matrix *D_old = gsl_matrix_alloc(norb,norb);
-                for (int i=0; i<norb; i++)
-                    for (int j=0; j<norb; j++)
-                        gsl_matrix_set(D_old, i, j, gsl_matrix_get(D, i, j));
+					for (int i=0; i<norb; i++)
+					{
+						for (int j=0; j<norb ;j++)
+						{
+							athroisma = 0;
+							for (int k=0; k<=nocc; k++)
+							{
+								athroisma += gsl_matrix_get(C,i,k)*gsl_matrix_get(C,j,k);
+							}
+							gsl_matrix_set(D,i,j, athroisma);
+						}
+					}
+					Eelec = 0;
 
-	        for (int i=0; i<norb; i++)
-	        {
-		        for (int j=0; j<norb ;j++)
-		        {
-			        athroisma = 0;
-			        for (int k=0; k<=nocc; k++)
-			        {
-				        athroisma += gsl_matrix_get(C,i,k)*gsl_matrix_get(C,j,k);
-			        }
-			        gsl_matrix_set(D,i,j, athroisma);
-		        }
-	        }
-	        Eelec = 0;
+					for (int i=0;i<norb;i++)
+					{
+						for (int j=0;j<norb;j++)
+						{
+							gsl_matrix_set(Fock,i,j,gsl_matrix_get(Hcore,i,j));
+							for (int k=0; k<norb; k++)
+							{
+																				athroisma = 0;
+								for (int l=0; l<norb;l++)
+								{
+																								athroisma += (2*eri[i+1][j+1][k+1][l+1] - eri[i+1][k+1][j+1][l+1])*gsl_matrix_get(D,k,l);
+								}
+																				gsl_matrix_set(Fock,i,j, athroisma+gsl_matrix_get(Fock,i,j)); //ylopoiisi tou += me gsl_matrix, tipota idiaitero
+							}
+						}
+					}
 
-	        for (int i=0;i<norb;i++)
-	        {
-		        for (int j=0;j<norb;j++)
-		        {
-			        gsl_matrix_set(Fock,i,j,gsl_matrix_get(Hcore,i,j));
-			        for (int k=0; k<norb; k++)
-			        {
-                                        athroisma = 0;
-				        for (int l=0; l<norb;l++)
-				        {
-                                                athroisma += (2*eri[i+1][j+1][k+1][l+1] - eri[i+1][k+1][j+1][l+1])*gsl_matrix_get(D,k,l);
-				        }
-                                        gsl_matrix_set(Fock,i,j, athroisma+gsl_matrix_get(Fock,i,j)); //ylopoiisi tou += me gsl_matrix, tipota idiaitero
-			        }
-		        }
-	        }
+					for (int i=0; i<norb; i++)
+					{
+						for (int j=0; j<norb; j++)
+						{
+							Eelec += gsl_matrix_get(D,i,j)*(gsl_matrix_get(Hcore,i,j) + gsl_matrix_get(Fock,i,j));
+						}
+					}
+								if (res < 2)
+								{
+												gsl_blas_dgemm(CblasNoTrans, CblasNoTrans, 1.0, Fock, D, 0.0, tmp);
+												gsl_blas_dgemm(CblasNoTrans, CblasNoTrans, 1.0, tmp, Ssaved, 0.0, FDS);
 
-	        for (int i=0; i<norb; i++)
-	        {
-		        for (int j=0; j<norb; j++)
-		        {
-			        Eelec += gsl_matrix_get(D,i,j)*(gsl_matrix_get(Hcore,i,j) + gsl_matrix_get(Fock,i,j));
-		        }
-	        }
-                if (res < 2)
-                {
-                        gsl_blas_dgemm(CblasNoTrans, CblasNoTrans, 1.0, Fock, D, 0.0, tmp);
-                        gsl_blas_dgemm(CblasNoTrans, CblasNoTrans, 1.0, tmp, Ssaved, 0.0, FDS);
+												gsl_blas_dgemm(CblasNoTrans, CblasNoTrans, 1.0, Ssaved, D, 0.0, tmp);
+												gsl_blas_dgemm(CblasNoTrans, CblasNoTrans, 1.0, tmp, Fock, 0.0, SDF);
 
-                        gsl_blas_dgemm(CblasNoTrans, CblasNoTrans, 1.0, Ssaved, D, 0.0, tmp);
-                        gsl_blas_dgemm(CblasNoTrans, CblasNoTrans, 1.0, tmp, Fock, 0.0, SDF);
+												if (diis % 5 == 1)
+												{
+																for (int i=0; i<norb; i++)
+																				for (int j=0;j<norb;j++)
+																								gsl_matrix_set(e1, i, j, gsl_matrix_get(FDS,i,j));
+																gsl_matrix_sub (e1,  SDF);
+																for (int i=0; i<norb; i++)
+																				for (int j=0;j<norb;j++)
+																								gsl_matrix_set(F1, i, j, gsl_matrix_get(Fock,i,j));
+												}
+												else if (diis % 5 == 2)
+												{
+																for (int i=0; i<norb; i++)
+																				for (int j=0;j<norb;j++)
+																								gsl_matrix_set(e2, i, j, gsl_matrix_get(FDS,i,j));
+																gsl_matrix_sub (e2,  SDF);
+																for (int i=0; i<norb; i++)
+																				for (int j=0;j<norb;j++)
+																								gsl_matrix_set(F2, i, j, gsl_matrix_get(Fock,i,j));
+												}
+												else if (diis % 5 == 3)
+												{
+																for (int i=0; i<norb; i++)
+																				for (int j=0;j<norb;j++)
+																								gsl_matrix_set(e3, i, j, gsl_matrix_get(FDS,i,j));
+																gsl_matrix_sub (e3,  SDF);
+																for (int i=0; i<norb; i++)
+																				for (int j=0;j<norb;j++)
+																								gsl_matrix_set(F3, i, j, gsl_matrix_get(Fock,i,j));
+												}
+												else if (diis % 5 == 4)
+												{
+																for (int i=0; i<norb; i++)
+																				for (int j=0;j<norb;j++)
+																								gsl_matrix_set(e4, i, j, gsl_matrix_get(FDS,i,j));
+																gsl_matrix_sub (e4,  SDF);
+																for (int i=0; i<norb; i++)
+																				for (int j=0;j<norb;j++)
+																								gsl_matrix_set(F4, i, j, gsl_matrix_get(Fock,i,j));
+												}
+												else if (diis % 5 == 0)
+												{
+																for (int i=0; i<norb; i++)
+																				for (int j=0;j<norb;j++)
+																								gsl_matrix_set(e5, i, j, gsl_matrix_get(FDS,i,j));
+																gsl_matrix_sub (e5,  SDF);
+																for (int i=0; i<norb; i++)
+																				for (int j=0;j<norb;j++)
+																								gsl_matrix_set(F5, i, j, gsl_matrix_get(Fock,i,j));
+												}
+												if (diis >= 5)
+												{
+																Fock = diisfunc(e1, e2, e3, e4, e5, F1, F2, F3, F4, F5);
+												}
+												++diis;
+								}
 
-                        if (diis % 5 == 1)
-                        {
-                                for (int i=0; i<norb; i++)
-                                        for (int j=0;j<norb;j++)
-                                                gsl_matrix_set(e1, i, j, gsl_matrix_get(FDS,i,j));
-                                gsl_matrix_sub (e1,  SDF);
-                                for (int i=0; i<norb; i++)
-                                        for (int j=0;j<norb;j++)
-                                                gsl_matrix_set(F1, i, j, gsl_matrix_get(Fock,i,j));
-                        }
-                        else if (diis % 5 == 2)
-                        {
-                                for (int i=0; i<norb; i++)
-                                        for (int j=0;j<norb;j++)
-                                                gsl_matrix_set(e2, i, j, gsl_matrix_get(FDS,i,j));
-                                gsl_matrix_sub (e2,  SDF);
-                                for (int i=0; i<norb; i++)
-                                        for (int j=0;j<norb;j++)
-                                                gsl_matrix_set(F2, i, j, gsl_matrix_get(Fock,i,j));
-                        }
-                        else if (diis % 5 == 3)
-                        {
-                                for (int i=0; i<norb; i++)
-                                        for (int j=0;j<norb;j++)
-                                                gsl_matrix_set(e3, i, j, gsl_matrix_get(FDS,i,j));
-                                gsl_matrix_sub (e3,  SDF);
-                                for (int i=0; i<norb; i++)
-                                        for (int j=0;j<norb;j++)
-                                                gsl_matrix_set(F3, i, j, gsl_matrix_get(Fock,i,j));
-                        }
-                        else if (diis % 5 == 4)
-                        {
-                                for (int i=0; i<norb; i++)
-                                        for (int j=0;j<norb;j++)
-                                                gsl_matrix_set(e4, i, j, gsl_matrix_get(FDS,i,j));
-                                gsl_matrix_sub (e4,  SDF);
-                                for (int i=0; i<norb; i++)
-                                        for (int j=0;j<norb;j++)
-                                                gsl_matrix_set(F4, i, j, gsl_matrix_get(Fock,i,j));
-                        }
-                        else if (diis % 5 == 0)
-                        {
-                                for (int i=0; i<norb; i++)
-                                        for (int j=0;j<norb;j++)
-                                                gsl_matrix_set(e5, i, j, gsl_matrix_get(FDS,i,j));
-                                gsl_matrix_sub (e5,  SDF);
-                                for (int i=0; i<norb; i++)
-                                        for (int j=0;j<norb;j++)
-                                                gsl_matrix_set(F5, i, j, gsl_matrix_get(Fock,i,j));
-                        }
-                        if (diis >= 5)
-                        {
-                                Fock = diisfunc(e1, e2, e3, e4, e5, F1, F2, F3, F4, F5);
-                        }
-                        ++diis;
-                }
+								res = rms(D, D_old, norb);
+								if (iter<10)
+										printf("0%d\t   %.12lf  \t%.12lf\n", iter,Eelec, res);
+								else
+									  printf("%2d\t   %.12lf  \t%.12lf\n", iter,Eelec, res);
+					iter++;
+				}
 
-                res = rms(D, D_old, norb);
-	        printf("%2d\t   %.12lf  \t%.12lf\t%.12lf\n", iter,Eelec, Eelec+enuc, res);
-	        iter++;
-        }
-    printf("E(HF) = %.12lf\n", Eelec+enuc);
+				free(Lambda); free(L); free(Lambdasqrt); free(tmp); free(F); free(Cprime); free(FDS); free(SDF); free(e1); free(e2); free(e3); free(e4); free(e5); free(F1);  free(F2); free(F3); free(F4); free(F5); free(w); free(eval); free(evec);
 
-    //    findTraceDensity(Ssqrt, D); //Sanity check for the trace of density matrix = number of particles
+				//findTraceDensity(Ssqrt, D); //Sanity check for the trace of density matrix = number of particles
+
+				if (iter <= maxiter+1)
+					return Eelec;
+				else { printf("HF did not converge.\n");
+					return 0; }
+}
+
+int main()
+{
+	readGeom(); //Read Nelec and Number of orbitals
+  double enuc, ****eri;   gsl_matrix *T, *S, *V, *Hcore;
+  allocate4(eri, norb+2);
+  S = gsl_matrix_alloc(norb, norb); T = gsl_matrix_alloc(norb, norb); V = gsl_matrix_alloc(norb, norb); Hcore = gsl_matrix_alloc(norb, norb);
+  gsl_matrix_set_zero(Hcore); gsl_matrix_set_zero(S); gsl_matrix_set_zero(V); gsl_matrix_set_zero(T);
+
+	readData(eri, T, S, V, &enuc);
+
+  gsl_matrix_set_zero(Hcore); gsl_matrix_add(Hcore, T);  gsl_matrix_add(Hcore, V); //Construct Hcore
+
+	gsl_matrix *Fock = gsl_matrix_alloc(norb, norb); 	gsl_matrix *D = gsl_matrix_alloc(norb,norb); 	gsl_matrix *C = gsl_matrix_alloc(norb, norb); 	gsl_vector *epsilon = gsl_vector_alloc(norb);
+
+	gsl_matrix *Ssaved = gsl_matrix_alloc(norb, norb);
+	for (int i=0; i<norb; i++)
+					for (int j=0;j<norb;j++)  //I keep Ssaved, because I need them later in DIIS
+									gsl_matrix_set(Ssaved, i, j, gsl_matrix_get(S,i,j));
+
+  int hfmaxiter = 128;
+
+	double Eelec = HF(S, T, V, eri, Hcore, D, Fock, C, epsilon, Ssaved, hfmaxiter);
+	printf("E(nuc) + E(HF) = %.12lf\n", Eelec+enuc);
 
     transformIntegrals(eri, C); //transform from AO basis to MO spatial
 
-		double energeia = mp2(epsilon, eri);
-	  printf("E(MP2) with spatial orbitals = %.12lf\n", energeia);
+	  //printf("E(MP2) with spatial orbitals = %.12lf\n", mp2(epsilon, eri));
 
-        double  ****soeri;
-        allocate4(soeri, dim+2);
+    double  ****soeri;
+    allocate4(soeri, dim+1);
 
-       gsl_matrix *soFock = gsl_matrix_alloc(dim, dim);
+    gsl_matrix *soFock = gsl_matrix_alloc(dim, dim);
 
-        spinOrbitals(soeri, eri);
-        spinOFock(soFock, epsilon);
+    spinOrbitals(soeri, eri);
+    spinOFock(soFock, epsilon);
 
                 /*LD_LIBRARY_PATH=/home/ap73/Desktop/GSL/lib
                 export LD_LIBRARY_PATH
                 g++ -c -o project.o -I/home/ap73/Desktop/GSL/include project.c;g++ -o project.x project.o -L/home/ap73/Desktop/GSL/lib -lgsl -lgslcblas -lm */
 
-    int maxiter=128; //1 for MP2
+    int ccsdmaxiter=35; //1 for MP2
 
 		double **ts, ****td;
-		allocate2(ts, dim);
-		allocate4(td, dim);
-		set_zero(ts, dim);
-		set_zero(td, dim);
+		allocate2(ts, dim); allocate4(td, dim);
+		set_zero(ts, dim); set_zero(td, dim);
 
-    double eccsd = doccsd(soFock, soeri, maxiter, ts, td);
-		if (maxiter != 1) {
-            printf("E(CCSD) = %.12lf\nE(HF) + E(CCSD) = %.12lf\n", eccsd, Eelec+enuc+eccsd);
-    				double eccsdt = doccsdt(soFock, soeri, ts, td);
-        		printf("E(T) = %.12lf\nE(SCF) + E(CCSD) + E(T) = %.12lf\n", eccsdt, Eelec+enuc+eccsd+eccsdt);}
-	  else
-						printf("E(HF) + E(MP2) = %.12lf\n", Eelec+enuc+eccsd);
+		if (Eelec != 0) {
+	    double eccsd = doccsd(soFock, soeri, ccsdmaxiter, ts, td);
+			if (ccsdmaxiter != 1) {
+	            printf("E(CCSD) = %.12lf\nE(HF) + E(CCSD) = %.12lf\n", eccsd, Eelec+enuc+eccsd);
+							if (eccsd != 0) {
+	    				double eccsdt = doccsdt(soFock, soeri, ts, td);
+	        		printf("E(T) = %.12lf\nE(HF) + E(CCSD) + E(T) = %.12lf\n", eccsdt, Eelec+enuc+eccsd+eccsdt);}
+						  }
+		  else
+							printf("E(HF) + E(MP2) = %.12lf\n", Eelec+enuc+eccsd);
 
-   CIS(soeri, soFock, epsilon, eri);
-	 //RPA1(soeri, soFock);
-	 RPA2(soeri, soFock);
+		  free(ts); free(td);
+
+			CIS(soeri, soFock, epsilon, eri);
+			//RPA1(soeri, soFock);
+			RPA2(soeri, soFock);
+
+	 }
+	 		else
+							printf("No more calculations available. HF didn't converge.\n");
 
 	return 0;
 }
