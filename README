@@ -1,6 +1,8 @@
 First version of QCode, an educational software for quantum chemistry calculations based on GSL (GNU Scientific Library). The code is not optimized, but it should work.
 The reason I am coding this is for personal practice, but it would be great if someone could also benefit from it.
 
+The idea is taken from prof. Crawford.
+
 Currently supporting: HF + DIIS	
 		      MP2
 	              CCSD + DIIS
