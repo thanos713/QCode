@@ -10,3 +10,4 @@ More features:
 	Obara-Saika for generating integrals
 	Davidson diagonalization for larget CIS and/or RPA matrices
 	Relative intensity for excited states
+        Add GUI (with Qt)
