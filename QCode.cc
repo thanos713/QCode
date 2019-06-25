@@ -45,15 +45,12 @@ void clever_printf(gsl_matrix *matrix, const char *text, int size)
 
 	for (int i=0; i<size; i++)
 	{
-                if (gsl_matrix_get(matrix, i, 0) < 0.0)
-		        printf("%d  ", i+1);
-                else
-                        printf("%d  ", i+1);
-		for (int j=0; j<size; j++)
-		{
-			printf("%.5lf ", gsl_matrix_get(matrix, i,j));
-		}
-		printf("\n");
+		    printf("%d  ", i+1);
+				for (int j=0; j<size; j++)
+				{
+					printf("%.5lf ", gsl_matrix_get(matrix, i,j));
+				}
+				printf("\n");
 	}
 }
 
@@ -108,22 +105,37 @@ void set_zero(double ****tensor, int dimension)
 /*Below there are the DIIS functions for HF, singles and doubles of CCSD.
 DIIS can be found in here:
 		Pulay, P. (1980). Convergence acceleration of iterative sequences. the case of scf iteration. Chemical Physics Letters, 73(2), 393-398
-and DIIS for CC can be found in here:
+DIIS for CC can be found in here:
 		G.E. Scuseria, T.J. Lee, and H.F. Schaefer, “Accelerating the conference of the coupled-cluster approach. The use of the DIIS method”, Chem. Phys. Lett. 130, 236 (1986).
 */
 
 
-/*Function for extrapolating the new Fock matrix in Hartree-Fock using DIIS.*/
+/*Function for extrapolating the new Fock matrix in Hartree-Fock using DIIS.
+The last 5 Fock matrices must be provided as well as the 5 respective error matrices.
+For now the number of DIIS vectors is hardcoded.
+The return value is the extrapolated Fock matrix.*/
 gsl_matrix *diisfunc(gsl_matrix *e1, gsl_matrix *e2, gsl_matrix *e3, gsl_matrix *e4, gsl_matrix *e5, gsl_matrix *F1, gsl_matrix *F2, gsl_matrix *F3, gsl_matrix *F4, gsl_matrix *F5)
 {
+/*The extrapolated Fock matrix is F' = sum_i (ciFi)
+To find ci's, we construct the matrix B with Bij = Tr(ei*ej), because ei*ej is a matrix.
+The system of linear equations that we solve to find ci's is:
+
+		(B11 B12 ... B1m -1)     (c1)            ( 0 )
+	  (B21 B22 ... B2m -1)     (c2)            ( 0 )
+    (... ... ... ... -1)     (...)      =    (...)
+		(Bm1 Bm2 ... Bmm -1)     (cm)            ( 0 )
+		(-1  -1  ... -1   0)   (lambda)          (-1 )
+*/
+
     double trace = 0;
-    gsl_matrix *tmp = gsl_matrix_alloc(norb,norb);
-    gsl_vector *x = gsl_vector_alloc(6); //6 (six) because I am storing 5 error vectors and Fock matrices. For now everything is hardcoded.
+    gsl_matrix *tmp = gsl_matrix_alloc(norb,norb); //ei*ej matrix
+    gsl_vector *x = gsl_vector_alloc(6); //The ci's plus the lambda. 6 (six) because I am storing 5 error vectors and Fock matrices.
 
     gsl_matrix *B = gsl_matrix_alloc(6,6);
-    gsl_vector *right = gsl_vector_alloc(6);
+    gsl_vector *right = gsl_vector_alloc(6); //rhs of the system of the linear equations
     gsl_vector_set_zero(right);
 
+//Computing B.
     gsl_blas_dgemm(CblasNoTrans, CblasTrans, 1.0, e1, e1, 0.0, tmp);
     for (int i=0; i<norb; i++)
             trace += gsl_matrix_get(tmp, i, i);
@@ -264,20 +276,26 @@ gsl_matrix *diisfunc(gsl_matrix *e1, gsl_matrix *e2, gsl_matrix *e3, gsl_matrix 
     for (int i=0; i<norb; i++)
             trace += gsl_matrix_get(tmp, i, i);
     gsl_matrix_set(B, 4, 4, trace);
-
+//Finished computing tr(ei*ej).
+//Starting to store the far-right and far-down elements of B.
     for (int i=0; i<6; i++)
     {
             gsl_matrix_set(B, 5, i, -1);
             gsl_matrix_set(B, i, 5, -1);
     }
     gsl_matrix_set(B, 5, 5, 0);
-    gsl_vector_set(right, 5, -1);
+//B is ready.
+    gsl_vector_set(right, 5, -1); //The vector on the rhs of the system of linear equations is initialized
+
+//Solving the system
     gsl_permutation *p; int ss;
     x = gsl_vector_alloc(6);
     p = gsl_permutation_alloc(6);
     gsl_linalg_LU_decomp(B, p, &ss);
     gsl_linalg_LU_solve(B, p, right, x);
+//Use of GSL functions that already exist.
 
+//Storing again the Fock matrices, so that we do not change them accidentally.
     gsl_matrix *FF1 = gsl_matrix_alloc(norb, norb);
     gsl_matrix *FF2 = gsl_matrix_alloc(norb, norb);
     gsl_matrix *FF3 = gsl_matrix_alloc(norb, norb);
@@ -292,22 +310,27 @@ gsl_matrix *diisfunc(gsl_matrix *e1, gsl_matrix *e2, gsl_matrix *e3, gsl_matrix 
             gsl_matrix_set(FF4, i, j, gsl_matrix_get(F4, i, j));
             gsl_matrix_set(FF5, i, j, gsl_matrix_get(F5, i, j));}}
 
-    gsl_matrix_scale (FF1, gsl_vector_get(x,0));
-    gsl_matrix_scale (FF2, gsl_vector_get(x,1));
+//Extrapolation
+    gsl_matrix_scale (FF1, gsl_vector_get(x,0)); //Multiply by c1
+    gsl_matrix_scale (FF2, gsl_vector_get(x,1)); //etc
     gsl_matrix_scale (FF3, gsl_vector_get(x,2));
     gsl_matrix_scale (FF4, gsl_vector_get(x,3));
     gsl_matrix_scale (FF5, gsl_vector_get(x,4));
-    gsl_matrix_add(FF1, FF2);
+    gsl_matrix_add(FF1, FF2); //Add evrerything to FF1 and return it.
     gsl_matrix_add(FF1, FF3);
     gsl_matrix_add(FF1, FF4);
     gsl_matrix_add(FF1, FF5);
-
+//Done. Result is on FF1.
 		free(tmp); free(x); free(B);
     return FF1;
 
 }
 
-/*Function for extrapolating the new single-amplitudes in Coupled-cluster singles-doubles (CCSD) using DIIS.*/
+/*Function for extrapolating the new single-amplitudes in Coupled-cluster singles-doubles (CCSD) using DIIS.
+There are no comments because the same apply as in the HF case.
+The last 5 singles matrices must be provided as well as the 5 respective error matrices.
+For now the number of DIIS vectors is hardcoded.
+The return value is the extrapolated singles matrix.*/
 double **singlesdiisfunc(gsl_matrix *e1, gsl_matrix *e2, gsl_matrix *e3, gsl_matrix *e4, gsl_matrix *e5, gsl_matrix *F1, gsl_matrix *F2, gsl_matrix *F3, gsl_matrix *F4, gsl_matrix *F5)
 {
     double trace = 0;
@@ -508,7 +531,13 @@ double **singlesdiisfunc(gsl_matrix *e1, gsl_matrix *e2, gsl_matrix *e3, gsl_mat
 
 }
 
-/*Function for extrapolating the new double-amplitudes in Coupled-cluster singles-doubles (CCSD) using DIIS.*/
+
+/*Function for extrapolating the new double-amplitudes in Coupled-cluster singles-doubles (CCSD) using DIIS.
+There are no comments because the same apply as in the HF case.
+The last 5 doubles matrices must be provided as well as the 5 respective error matrices.
+For now the number of DIIS vectors is hardcoded.
+The return value is the extrapolated doubles tensor.
+Careful: The doubles are a rank-4 tensor. The way it turns into a matrix has a comment inside the function below.*/
 double ****doublesdiisfunc(gsl_matrix *e1, gsl_matrix *e2, gsl_matrix *e3, gsl_matrix *e4, gsl_matrix *e5, gsl_matrix *F1, gsl_matrix *F2, gsl_matrix *F3, gsl_matrix *F4, gsl_matrix *F5)
 {
     double trace = 0;
@@ -707,6 +736,8 @@ double ****doublesdiisfunc(gsl_matrix *e1, gsl_matrix *e2, gsl_matrix *e3, gsl_m
 					for (int k=0; k<dim; k++)
 							for (int l=0; l<dim; l++)
 									td[i][j][k][l] = gsl_matrix_get(FF1, i+j*dim, k+l*dim); }
+                  /* i+j*dim, k+l*dim is used to turn a tensor of dimxdimxdimxdim to a matrix of dim**2xdim**2.
+									The order of the loops *must* be i,j,k,l and also the way everything must be the same when you call doublesdiisfunc() from the doccsd().*/
 
 		free(tmp); free(x); free(B);
     return td;
@@ -714,7 +745,8 @@ double ****doublesdiisfunc(gsl_matrix *e1, gsl_matrix *e2, gsl_matrix *e3, gsl_m
 }
 
 /*Function for computing the Trace(DS) (density x overlap) which gives the number of occupied orbitals.
-Used mostly as a sanity check.*/
+Used mostly as a sanity check.
+Note: For non-molecular hamiltonians we can directly use Trace(D).*/
 void findTraceDensity(gsl_matrix *Ssqrt, gsl_matrix *D)
 {
         gsl_matrix *SDS = gsl_matrix_alloc(norb, norb);
@@ -723,31 +755,35 @@ void findTraceDensity(gsl_matrix *Ssqrt, gsl_matrix *D)
         gsl_matrix *Ssqrt_for_inv = gsl_matrix_alloc(norb, norb);
 
         for (int i=0;i<norb;i++)
-                for (int j=0; j<norb;j++) //Needed because linalg_lu_decomp destroys the old matrix
+                for (int j=0; j<norb;j++) //Needed because linalg_lu_decomp destroys the old matrix.
                         gsl_matrix_set(Ssqrt_for_inv,i,j,gsl_matrix_get(Ssqrt,i,j));
 
         int ss;
-        gsl_permutation * p = gsl_permutation_alloc (norb); //Actual inversing
+        gsl_permutation * p = gsl_permutation_alloc (norb); //Actual inversing of Ssqrt
         gsl_linalg_LU_decomp (Ssqrt_for_inv, p, &ss);
         gsl_linalg_LU_invert (Ssqrt_for_inv, p, invSsqrt);
 
-        gsl_blas_dgemm(CblasNoTrans, CblasNoTrans, 1.0, invSsqrt, D, 0.0, SD);
-        gsl_blas_dgemm(CblasNoTrans, CblasNoTrans, 1.0, SD, invSsqrt, 0.0, SDS);//O logos pou to kano etsi einai epeidi exo to Ssqrt, oxi to S, kanonika einai trace(PS)
+        gsl_blas_dgemm(CblasNoTrans, CblasNoTrans, 1.0, invSsqrt, D, 0.0, SD); //S^-1/2 x D
+        gsl_blas_dgemm(CblasNoTrans, CblasNoTrans, 1.0, SD, invSsqrt, 0.0, SDS); // S^-1/2 x D x S-1/2 = DS^-1
+				//The reason we have DS-1 depends on how the overlap integrals are provided.
 
       //  clever_printf(SDS, "Density matrix.", norb);
         double noccupied=0;
         for (int i=0;i<norb;i++)
-                noccupied += gsl_matrix_get(SDS,i,i); //find number of occupied orbitals from density matrix
+                noccupied += gsl_matrix_get(SDS,i,i); //Computing the trace of DS
         printf("trace = %lf\n", noccupied);
 				free(SDS); free(SD); free(invSsqrt); free(Ssqrt_for_inv);
 }
 
 /*Function for transforming the two-electron integrals from the AO basis to spatial-orbitals.
+The formula used is: (p q|r s) = sigma_mu c[p][mu] sigma_nu c[q][nu] sigma_lambda c[r][lambda] sigma_sigma c[s][sigma] (mu nu|lambda sigma)
+where the rhs refers to AO basis with C's being the MO coefficients from HF.
 MP2 can use these directly in this implementation.
-The transformation is needed if we want to use spin-orbitals later.*/
+The transformation is needed if we want to use spin-orbitals later.
+Be careful: eri change *permanently* to the MO basis.*/
 void transformIntegrals(double ****eri, gsl_matrix *C)
 {
-    double sum=0, ****temperi;
+    double sum=0, ****temperi; //temperi is needed to break the summation in 4 steps, one for each index.
 
 		allocate4(temperi, norb+2);
 
@@ -782,7 +818,10 @@ void transformIntegrals(double ****eri, gsl_matrix *C)
 			  free(temperi);
 }
 
-/*Function for transforming spatial-orbitals to spin-orbitals.*/
+/*Function for transforming spatial-orbitals to spin-orbitals.
+The spin orbitals are 16 times the spatial orbitals.
+The formula is <pq|rs> = (pr|qs) * integral-of-spins.
+soeri will contain the final spin-orbital two electron integrals.*/
 void spinOrbitals(double ****soeri, double ****eri)
 {
     set_zero(soeri, dim+1);
@@ -815,9 +854,13 @@ void spinOFock(gsl_matrix *soFock , gsl_vector *epsilon)
 }
 
 //---------------------------------------
-/*These functions and this implementation is based on:
+/*Below there are some functions for the implementation of CCSD.
+These functions and this implementation is based on:
 J.F. Stanton, J. Gauss, J.D. Watts, and R.J. Bartlett, J. Chem. Phys. volume 94, pp. 4334-4345 (1991).
-I will refer to it as [1]. */
+I will refer to it as [1].
+
+Careful: a,b,c,d,... correspond to virtual and i,j,k,l,... to occupied.
+         This means that the order *must* be the same and not mess up ai with ia. */
 //---------------------------------------
 
 /*Eq. 9 of [1].*/
@@ -834,7 +877,7 @@ double tau(int a, int b,int i,int j, double **ts, double ****td)
 
 /*Basic equation of CC for computing the energy, after getting the
 singles, doubles, the Fock matrix and the two-electron integrals.
-Everything is in spin-orbitals.*/
+Everything is in terms of spin-orbitals.*/
 double ccsdCalc(gsl_matrix *soFock, double ****soeri, double **ts, double ****td)
 {
   double eccsd = 0.0;
@@ -987,13 +1030,13 @@ void makeT2( double **ts, double ****td, double ****tdnew, double ****soeri, gsl
 }
 
 /*Actual function for performing the cycles of CCSD.
-If we just do one iteration, we get MP2 by using spin-orbitals.*/
+If we just do one iteration, we get MP2.*/
 double doccsd(gsl_matrix *soFock, double ****soeri, int maxiter, double **ts, double ****td)
 {
-  double **Fae, **Fmi, **Fme, **Dai;
+  double **Fae, **Fmi, **Fme, **Dai; //Intermediates
 	allocate2(Fae, dim);  allocate2(Fmi, dim);  allocate2(Fme, dim);  allocate2(Dai, dim);
 
-	double ****Wmnij, ****Wabef, ****Wmbej, ****Dabij;
+	double ****Wmnij, ****Wabef, ****Wmbej, ****Dabij; //Intermediates
 	  allocate4(Wmnij, dim);  allocate4(Wabef, dim);  allocate4(Wmbej, dim);  allocate4(Dabij, dim);
 
 	set_zero(Fae, dim); set_zero(Fmi, dim); set_zero(Fme, dim); set_zero(Dai, dim);
@@ -1001,20 +1044,22 @@ double doccsd(gsl_matrix *soFock, double ****soeri, int maxiter, double **ts, do
 
    double res = 0;
    int iter = 1;
-   for (int a=Nelec; a<dim; a++) //i, j mexri occupied, a,b virtual
+   for (int a=Nelec; a<dim; a++) //i, j occupied, a,b virtual
         for (int b=Nelec; b<dim; b++)
             for (int i=0; i<Nelec; i++)
                 for (int j=0; j<Nelec;j++)
                     td[a][b][i][j] += soeri[i][j][a][b]/(gsl_matrix_get(soFock, i,i) + gsl_matrix_get(soFock, j,j) - gsl_matrix_get(soFock, a,a) - gsl_matrix_get(soFock, b,b));
+								  //The guess for the doubles is from MP2. We can also get MP2 amplitudes with one iteration if we start from zero.
 
     double mmp2=0;
-    for (int a=Nelec; a<dim; a++) //i, j mexri occupied, a,b virtual
+    for (int a=Nelec; a<dim; a++) //i, j occupied, a,b virtual
         for (int b=Nelec; b<dim; b++)
             for (int i=0; i<Nelec; i++)
                 for (int j=0; j<Nelec;j++)
-                    mmp2 += 0.25*soeri[i][j][a][b]*td[a][b][i][j];
+                    mmp2 += 0.25*soeri[i][j][a][b]*td[a][b][i][j]; //Computing MP2 energy from the guesses.
+
     printf("E(MP2) = %.12lf\n", mmp2);
-    if (maxiter == 1) //Checking if I simply want MP2
+    if (maxiter == 1) //Checking if MP2 is chosen.
         return mmp2;
 
     printf("Starting CCSD\n");
@@ -1024,11 +1069,11 @@ double doccsd(gsl_matrix *soFock, double ****soeri, int maxiter, double **ts, do
             for (int i=0; i<Nelec; i++)
                 for (int j=0; j<Nelec; j++)
                     Dabij[a][b][i][j] = gsl_matrix_get(soFock, i,i) + gsl_matrix_get(soFock, j,j) - gsl_matrix_get(soFock, a,a) - gsl_matrix_get(soFock, b,b);
-
+										//Eq. 13 from [1].
     for (int a=Nelec; a<dim; a++)
         for (int i=0; i<Nelec; i++)
             Dai[a][i] = gsl_matrix_get(soFock, i,i) - gsl_matrix_get(soFock, a,a);
-
+						//Eq. 12 from [1].
 
         double  **tsnew, ****tdnew;
         allocate4(tdnew, dim);
@@ -1042,6 +1087,7 @@ double doccsd(gsl_matrix *soFock, double ****soeri, int maxiter, double **ts, do
   iter=1;
 	int diis = 1;
 
+//Error matrices and singles for DIIS.
 	gsl_matrix *e1 = gsl_matrix_alloc(dim,dim);
 	gsl_matrix *e2 = gsl_matrix_alloc(dim,dim);
 	gsl_matrix *e3 = gsl_matrix_alloc(dim,dim);
@@ -1053,6 +1099,7 @@ double doccsd(gsl_matrix *soFock, double ****soeri, int maxiter, double **ts, do
 	gsl_matrix *T4 = gsl_matrix_alloc(dim,dim);
 	gsl_matrix *T5 = gsl_matrix_alloc(dim,dim);
 
+//Error matrices and doubles for DIIS.
 	gsl_matrix *ee1 = gsl_matrix_alloc(dim*dim,dim*dim);
 	gsl_matrix *ee2 = gsl_matrix_alloc(dim*dim,dim*dim);
 	gsl_matrix *ee3 = gsl_matrix_alloc(dim*dim,dim*dim);
@@ -1074,10 +1121,10 @@ double doccsd(gsl_matrix *soFock, double ****soeri, int maxiter, double **ts, do
 				eccsd = ccsdCalc(soFock, soeri, ts, td);
 				res = rms(td, tdnew, dim);
 
-				if (res < 1e-5)
+				if (res < 1e-5) //If the solution has sufficiently started converging, turn on DIIS.
 				{
-								if (diis % 5 == 1)
-								{
+								if (diis % 5 == 1) //This is just way to see where to store the new error matrix and singles/doubles.
+								{									//The same applies to the other 4 cases, because we store 5 DIIS vectors.
 												for (int i=0; i<dim; i++)
 																for (int j=0;j<dim;j++)
 																			{	gsl_matrix_set(e1, i, j, ts[i][j] - tsnew[i][j]); gsl_matrix_set(T1, i, j, tsnew[i][j]); }
@@ -1087,6 +1134,7 @@ double doccsd(gsl_matrix *soFock, double ****soeri, int maxiter, double **ts, do
 															for (int k=0; k<dim; k++)
 																	for (int l=0;l<dim; l++)
 																			{ gsl_matrix_set(ee1, i+j*dim, k+l*dim, td[i][j][k][l] - tdnew[i][j][k][l]); gsl_matrix_set(TT1, i+j*dim, k+l*dim, tdnew[i][j][k][l]); }
+																			//i+j*dim, k+l*dim to convert from rank-4 tensor to matrix. The same *must* be used in *diisfunc.
 								}
 								else if (diis % 5 == 2)
 								{
@@ -1136,14 +1184,14 @@ double doccsd(gsl_matrix *soFock, double ****soeri, int maxiter, double **ts, do
 																		for (int l=0;l<dim; l++)
 																				{ gsl_matrix_set(ee5, i+j*dim, k+l*dim, td[i][j][k][l] - tdnew[i][j][k][l]); gsl_matrix_set(TT5, i+j*dim, k+l*dim, tdnew[i][j][k][l]); }
 								}
-								if (diis >= 5)
+								if (diis >= 5) //If we have at least 5 matrices for DIIS.
 								{
 												ts = singlesdiisfunc(e1, e2, e3, e4, e5, T1, T2, T3, T4, T5);
 												td = doublesdiisfunc(ee1, ee2, ee3, ee4, ee5, TT1, TT2, TT3, TT4, TT5);
 								}
 								++diis;
 				}
-				if (diis <= 5) {
+				if (diis <= 5) { //If we still have not turned on DIIS.
 			        for (int i=0; i<dim; i++)
 			            for (int j=0; j<dim; j++)
 			                ts[i][j] = tsnew[i][j];
@@ -1154,7 +1202,7 @@ double doccsd(gsl_matrix *soFock, double ****soeri, int maxiter, double **ts, do
 			                    for (int l=0; l<dim; l++)
 			                        td[i][j][k][l] = tdnew[i][j][k][l]; }
 
-				if (iter<10)
+				if (iter<10) //Just some "fancy" printing.
 						printf("0%d\t   %.12lf\t %.12lf\n", iter,eccsd, res);
 				else
 						printf("%2d\t   %.12lf\t %.12lf\n", iter,eccsd, res);
@@ -1190,7 +1238,8 @@ double denom(int i, int j, int k, int a, int b, int c, gsl_matrix *soFock)
 }
 
 /*Actual function for performing CCSD(T).
-Keep in mind that CCSD(T) is *not* iterative.*/
+Keep in mind that CCSD(T) is *not* iterative.
+The equations can be found at: http://sirius.chem.vt.edu/wiki/doku.php?id=crawdad:programming:project6 */
 double doccsdt(gsl_matrix *soFock, double ****soeri, double **ts, double ****td)
 {
      double et = 0, tttd, tttc;
@@ -1200,21 +1249,21 @@ double doccsdt(gsl_matrix *soFock, double ****soeri, double **ts, double ****td)
                 for (int a=Nelec; a<dim; a++){
                     for (int b=Nelec; b<dim; b++){
                         for (int c=Nelec; c<dim; c++){
-                                tttd = (ts[a][i]*soeri[j][k][b][c]-ts[a][j]*soeri[i][k][b][c]-ts[a][k]*soeri[j][i][b][c]-ts[b][i]*soeri[j][k][a][c]+ts[b][j]*soeri[i][k][a][c]+ts[b][k]*soeri[j][i][a][c]-ts[c][i]*soeri[j][k][b][a]+ts[c][j]*soeri[i][k][b][a]+ts[c][k]*soeri[j][i][b][a])/denom(i,j,k,a,b,c,soFock);
-                                tttc = 0;
+/*Disconnected triples on the fly*/tttd = (ts[a][i]*soeri[j][k][b][c]-ts[a][j]*soeri[i][k][b][c]-ts[a][k]*soeri[j][i][b][c]-ts[b][i]*soeri[j][k][a][c]+ts[b][j]*soeri[i][k][a][c]+ts[b][k]*soeri[j][i][a][c]-ts[c][i]*soeri[j][k][b][a]+ts[c][j]*soeri[i][k][b][a]+ts[c][k]*soeri[j][i][b][a])/denom(i,j,k,a,b,c,soFock);
+/*Connected triples on the fly*/ tttc = 0;
                                 for (int e=Nelec; e<dim; e++) {
                                 tttc += (td[a][e][j][k]*soeri[e][i][b][c]-td[a][e][i][k]*soeri[e][j][b][c]-td[a][e][j][i]*soeri[e][k][b][c]-td[b][e][j][k]*soeri[e][i][a][c]+td[b][e][i][k]*soeri[e][j][a][c]+td[b][e][j][i]*soeri[e][k][a][c]-td[c][e][j][k]*soeri[e][i][b][a]+td[c][e][i][k]*soeri[e][j][b][a]+td[c][e][j][i]*soeri[e][k][b][a])/denom(i,j,k,a,b,c,soFock); }
                                 for (int m=0; m<Nelec; m++) {
                                 tttc -= (td[b][c][i][m]*soeri[m][a][j][k]-td[b][c][j][m]*soeri[m][a][i][k]-td[b][c][k][m]*soeri[m][a][j][i]-td[a][c][i][m]*soeri[m][b][j][k]+td[a][c][j][m]*soeri[m][b][i][k]+td[a][c][k][m]*soeri[m][b][j][i]-td[b][a][i][m]*soeri[m][c][j][k]+td[b][a][j][m]*soeri[m][c][i][k]+td[b][a][k][m]*soeri[m][c][j][i])/denom(i,j,k,a,b,c,soFock); }
-                                et += tttc*denom(i,j,k,a,b,c,soFock)*(tttc+tttd)/36;
+/*Evaluating the energy*/       et += tttc*denom(i,j,k,a,b,c,soFock)*(tttc+tttd)/36;
                         }}}}}}
                 return et;
 }
 //------------------------------------------------------------------------------
-/*Now starts the part of the code that reads the geometry, the elements and the 1-/2- electron integrals from the files.
+/*Now starts the part of the code that reads the atoms, the geometry and the 1-/2- electron integrals from the files.
 The names of the files are hardcoded.*/
 
-/*Function for reading the geometry and the elements from the geometry file.
+/*Function for reading the atoms and the geometry from the geometry file.
 It also reads the number of orbitals in the end of the file (the last number). Be cautious.*/
 void readGeom()
 {
@@ -1223,8 +1272,8 @@ void readGeom()
 	 double **coord, *zval;
 
 	 fscanf(geomfile, "%d", &N);
-	 coord = (double**) malloc(N*sizeof(double*));
-	 zval = (double *)malloc(sizeof(double)*N);
+	 coord = (double**) malloc(N*sizeof(double*)); //x,y,z coordinates for each atom
+	 zval = (double *)malloc(sizeof(double)*N); //Atomic number of each atom
 
 	for (int i = 0; i < N; i++)
 					coord[i] = (double*) malloc(3*sizeof(double));
@@ -1233,15 +1282,18 @@ void readGeom()
 	for (int i=0; i<N; i++)
 	{
 					fscanf(geomfile, "%lf %lf %lf %lf\n", &zval[i], &coord[i][0], &coord[i][1], &coord[i][2]);
+					//Format of geometry file: atom_number x y z
 					sum += zval[i];
+					//sum is used to compute the number of electrons
   }
 
   fscanf(geomfile, "%d", &norb);
   Nelec = (int)sum;
-	nocc = Nelec/2 - 1;
-	dim = norb*2;
+	nocc = Nelec/2 - 1; //-1 because the arrays of the 1 and 2 electron integrals start from 1 and not 0.
+	dim = norb*2; //The size for the spin-orbitals
 
-	/*		#define norb 7
+	/*	Example for water with sto-3g:
+	    #define norb 7
 			#define nocc 4
 			#define dim 14
 			#define Nelec 10*/
@@ -1258,6 +1310,7 @@ void readData(double ****eri, gsl_matrix *T, gsl_matrix *S, gsl_matrix *V, doubl
 			fscanf(enucfile, "%lf", enuc);
 
 			double val;
+			//Reading one electron integrals.
 			for (int i=0; i< norb*(norb+1)/2; i++)
 			{
 				int pos1,pos2;
@@ -1272,8 +1325,9 @@ void readData(double ****eri, gsl_matrix *T, gsl_matrix *S, gsl_matrix *V, doubl
 										gsl_matrix_set(T, pos2-1, pos1-1, gsl_matrix_get (T, pos1-1, pos2-1));
 
 			}
-						set_zero(eri, norb);
+			set_zero(eri, norb);
 		  int mu,nu,l,s;
+			//Reading two electron integrals.
 			while (fscanf(erifile, "%d %d %d %d %lf", &mu, &nu, &l, &s, &val) != EOF)
 			{
 										eri[mu][nu][l][s] = val;
@@ -1292,11 +1346,12 @@ void readData(double ****eri, gsl_matrix *T, gsl_matrix *S, gsl_matrix *V, doubl
 			fclose(Vfile);
 }
 
-/*Function for doing MP2 with spatial orbitals.*/
+/*Function for doing MP2 with spatial orbitals.
+The equation can be found in any electronic structure/quantum chemistry textbook.*/
 double mp2(gsl_vector *epsilon, double ****eri)
 {
      double Emp2 = 0;
-     for (int i=1;i<=nocc+1;i++){ for (int j=1;j<=nocc+1;j++) { for (int a=nocc+2; a<=norb; a++) { for (int b=nocc+2; b<=norb;b++){ //PROSOXI STA INDICES, EINAI ME TO XERI BALMENA TA OCCUPIED
+     for (int i=1;i<=nocc+1;i++){ for (int j=1;j<=nocc+1;j++) { for (int a=nocc+2; a<=norb; a++) { for (int b=nocc+2; b<=norb;b++){
                                         Emp2 += eri[i][a][j][b]*(2*eri[i][a][j][b]-eri[i][b][j][a])/(gsl_vector_get(epsilon,i-1) + gsl_vector_get(epsilon,j-1) - gsl_vector_get(epsilon, a-1) - gsl_vector_get(epsilon, b-1)); } } } }
      return Emp2;
 }
@@ -1625,7 +1680,7 @@ printf("\n00\t   %.12lf\n", Eelec);
 	}
 
 	printf("01\t   %.12lf  \n", Eelec);
-
+	/*error = FDS - SDF, where F is the Fock matrix, D is the Density matrix and S is the overlap.*/
 				gsl_matrix *FDS = gsl_matrix_alloc(norb,norb);
 				gsl_matrix *SDF = gsl_matrix_alloc(norb,norb);
 				gsl_matrix *e1 = gsl_matrix_alloc(norb,norb);
