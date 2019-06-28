@@ -1,13 +1,17 @@
 Divide the code into many files.
+Create a makefile.
 Add unit testing with "catch" library. 
-Add more comments.
-Add papers for hf, mp2, cis and rpa.
 Possibly overload operators *, +, etc with gsl.
+Add documentation.
 
 More features:
 	CISD
 	DFT
 	Obara-Saika for generating integrals
-	Davidson diagonalization for larget CIS and/or RPA matrices
+	Davidson diagonalization for larger CIS and/or RPA matrices
 	Relative intensity for excited states
-        Add GUI (with Qt)
+
+Optimizations:
+	More "clever" ways to assign elements in gsl_matrix
+	Tensor contractions
+	CPU/GPU parallelization
