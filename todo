@@ -1,5 +1,3 @@
-Divide the code into many files.
-Create a makefile.
 Add unit testing with "catch" library. 
 Possibly overload operators *, +, etc with gsl.
 Add documentation.
