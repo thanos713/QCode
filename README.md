@@ -9,6 +9,7 @@
 ## Installation
 
 > Add the absolute path of GSL to the Makefile.
+
 > make
 
 ## Features
