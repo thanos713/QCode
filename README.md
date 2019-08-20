@@ -15,17 +15,17 @@
 
 Currently supporting:
 
->       HF + DIIS
+*       HF + DIIS
 
->       MP2
+*       MP2
 
->       CCSD + DIIS
+*       CCSD + DIIS
 
->       CCSD(T)
+*       CCSD(T)
 
->       CIS
+*       CIS
 
->       RPA
+*       RPA
 
  but by providing the one and two electron integrals.
 
