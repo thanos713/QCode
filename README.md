@@ -11,28 +11,29 @@
 - Run the makefile.
 - NOTE: Remember to add the absolute path of GSL to the Makefile, before trying to compile.
 
----
-
 ## Features
 
-- Currently supporting:
+Currently supporting:
 
-> HF + DIIS
-> MP2
-> CCSD + DIIS
-> CCSD(T)
-> CIS
-> RPA
+>       HF + DIIS
 
-- but by providing the one and two electron integrals.
+>       MP2
+
+>       CCSD + DIIS
+
+>       CCSD(T)
+
+>       CIS
+
+>       RPA
+
+ but by providing the one and two electron integrals.
 
 ---
 
 ## Documentation
 - Documentation is not available yet, but you can see the example files to get an idea on how to run sample calculations. The example is for H2O with STO-3G.
----
 
 ## Credits
 - The idea is taken from prof. Crawford.
----
 
