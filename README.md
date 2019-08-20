@@ -3,12 +3,12 @@ The reason I am coding this is for personal practice, but it would be great if s
 
 The idea is taken from prof. Crawford.
 
-Currently supporting: HF + DIIS	
-		      MP2
-	              CCSD + DIIS
-                      CCSD(T)
-                      CIS
-                      RPA
+Currently supporting: * HF + DIIS	
+		      * MP2
+	              * CCSD + DIIS
+                      * CCSD(T)
+                      * CIS
+                      * RPA
 but by providing the one and two electron integrals. 
 
 Documentation is not available yet, but you can see the example files to get an idea on how to run sample calculations. The example is for H2O with STO-3G.
