@@ -27,5 +27,4 @@ The idea is taken from prof. Crawford.
 
 
 ]]></content>
-  <tabTrigger>readme</tabTrigger>
 </snippet>
