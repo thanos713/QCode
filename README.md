@@ -8,8 +8,8 @@
 
 ## Installation
 
-- Run the makefile.
-- NOTE: Remember to add the absolute path of GSL to the Makefile, before trying to compile.
+> Add the absolute path of GSL to the Makefile.
+> make
 
 ## Features
 
@@ -31,4 +31,5 @@ Currently supporting:
 
 ## Credits
 - The idea is taken from prof. Crawford.
+- Code written by Thanos Papas.
 
