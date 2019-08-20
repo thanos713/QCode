@@ -13,7 +13,7 @@ NOTE: Remember to add the absolute path of GSL to the Makefile, before trying to
 
 Documentation is not available yet, but you can see the example files to get an idea on how to run sample calculations. The example is for H2O with STO-3G.
 
-Currently supporting: HF + DIIS 
+Currently supporting: HF + DIIS\s\s 
                       MP2
                       CCSD + DIIS
                       CCSD(T)
@@ -24,6 +24,8 @@ but by providing the one and two electron integrals.
 ## Credits
 
 The idea is taken from prof. Crawford.
+
+
 ]]></content>
   <tabTrigger>readme</tabTrigger>
 </snippet>
