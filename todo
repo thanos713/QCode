@@ -4,7 +4,6 @@ Add documentation.
 
 More features:
 	CISD
-	DFT
 	Obara-Saika for generating integrals
 	Davidson diagonalization for larger CIS and/or RPA matrices
 	Relative intensity for excited states
